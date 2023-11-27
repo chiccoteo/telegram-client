@@ -10,3 +10,4 @@ pydantic-settings
 pydantic
 starlette
 psycopg2
+annotated-types
