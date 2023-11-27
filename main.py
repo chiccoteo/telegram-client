@@ -106,9 +106,9 @@ async def get_client_tasks(params: pageable_params, client_id, db: db_dependency
     return await service.get_client_tasks(params, client_id, db)
 
 
-@app.on_event("startup")
-async def startup():
-    context_refresh_event()
+# @app.on_event("startup")
+# async def startup():
+#     context_refresh_event()
 
 
 add_pagination(app)
