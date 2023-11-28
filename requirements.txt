@@ -1,4 +1,3 @@
-annotated-types
 anyio
 APScheduler
 bcrypt
