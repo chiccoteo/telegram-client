@@ -95,10 +95,3 @@ class ClientTaskDto(BaseModel):
     task_id: int
     success: bool
     date: datetime
-
-
-class ClientReport(BaseModel):
-    client_id: int
-    count_succeed_tasks: int
-    count_failed_tasks: int
-

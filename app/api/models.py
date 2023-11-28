@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, Boolean, String, ForeignKey, TIMESTAMP, text, BigInteger
 
-from database import Base
+from app.db.database import Base
 
 
 class BaseModel:

@@ -8,22 +8,22 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi_pagination.ext.sqlalchemy import paginate as s_paginate
 from fastapi_pagination import paginate
 from fastapi_pagination.utils import disable_installed_extensions_check
-from pyrogram.enums import ChatMemberStatus
+from pyrogram.enums import ChatMemberStatus, ChatMembersFilter
 from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, BadRequest, UserAlreadyParticipant, \
-    PhoneNumberInvalid, RPCError, UserNotParticipant, UsernameInvalid, MessageIdInvalid, PhoneCodeExpired
+    PhoneNumberInvalid, RPCError, UsernameInvalid, PhoneCodeExpired
 
 from pyrogram import Client
 from pyrogram.raw import functions
 from sqlalchemy import func, false, true
 from sqlalchemy.sql import text
 
-import utils as utils
-from database import SessionLocal
-from enums import GrantType, TaskType, TaskStatus
-from models import MyClient, Task, ClientTask, User
-from exceptions import *
-from dtos import *
-from consts import api_id, api_hash, schedule_interval_time, comment_messages
+import app.api.utils as utils
+from app.db.database import SessionLocal
+from .enums import GrantType, TaskType, TaskStatus
+from .models import MyClient, Task, ClientTask, User
+from .exceptions import *
+from .dtos import *
+from .consts import api_id, api_hash, schedule_interval_time, comment_messages
 
 disable_installed_extensions_check()
 
@@ -231,10 +231,6 @@ group by t.id"""
 
         def task_statuses(x): return request.task_status if len(x) != 0 else [e for e in TaskStatus]
 
-        def start_date(x): return request.start_date if x is not None else datetime.now() - timedelta(days=1)
-
-        def end_date(x): return request.end_date if x is not None else datetime.now()
-
         query_str = """
         select t.id,
        chat_id,
@@ -254,13 +250,13 @@ from task t
          left join public.client_task ct1 on t.id = ct1.task_id and ct1.success = FALSE
 where t.task_type = ANY(:types)
   and t.status = ANY(:statuses)
-  and t.created_at between :start_date and :end_date
+  and (:start_date is null or :end_date is null or t.created_at between :start_date and :end_date)
 group by t.id, t.created_at
 order by t.created_at"""
         results = db.execute(text(query_str),
                              {"types": task_types(request.task_type), "statuses": task_statuses(request.task_status),
-                              "start_date": start_date(request.start_date),
-                              "end_date": end_date(request.end_date)}).fetchall()
+                              "start_date": request.start_date,
+                              "end_date": request.end_date}).fetchall()
         return paginate(results)
 
     @staticmethod
@@ -314,7 +310,7 @@ async def read_chat_message(monster, task, db):
                                                     increment=True)
             )
             return True
-        except UsernameInvalid | MessageIdInvalid:
+        except BadRequest:
             return set_task_invalid(task, db)
         except RPCError:
             return False
@@ -325,30 +321,53 @@ async def react_chat_message(monster, task, db):
         try:
             await monster.send_reaction(task.chat_id, extract_message_id(task.message_id), task.reaction)
             return True
-        except UsernameInvalid | MessageIdInvalid:
+        except BadRequest:
             return set_task_invalid(task, db)
         except RPCError:
             return False
 
 
-async def export_chat_members(monster, task, db):
+async def export_chat_members(monster: Client, task, db):
+    query_str = """
+    select count(id), sum(count)
+    from task
+    where parent_task_id = :task_id"""
+    count_child_tasks = db.execute(text(query_str), {"task_id": task.id}).fetchone()
     async with monster:
         try:
             await monster.join_chat(task.chat_id)
             await monster.join_chat(task.exported_chat_id)
+            members = []
+            until = count_child_tasks.count * 10
+            count_members_to_be_exported = 10
+            if task.count - count_child_tasks.sum < 10:
+                count_members_to_be_exported = task.count - count_child_tasks.sum
+            async for member in monster.get_chat_members(chat_id=task.chat_id, filter=ChatMembersFilter.RECENT):
+                if member.status == ChatMemberStatus.MEMBER and not member.user.is_deleted:
+                    if until == 0:
+                        members.append(member.user.id)
+                        if len(members) == count_members_to_be_exported:
+                            break
+                    else:
+                        until -= 1
+            previous_members_count = await monster.get_chat_members_count(task.exported_chat_id)
+            await monster.add_chat_members(task.exported_chat_id, members)
+            next_members_count = await monster.get_chat_members_count(task.exported_chat_id)
+            child_task = Task(chat_id=task.chat_id, count=next_members_count - previous_members_count,
+                              task_type=task.task_type, status=TaskStatus.COMPLETED,
+                              exported_chat_id=task.exported_chat_id,
+                              parent_task_id=task.id, interval=task.interval)
+            db.add(child_task)
+            db.commit()
+            db.refresh(child_task)
+            # try:
+            #     last_done_count = int(task.task_type.split(",")[1])
+            # except IndexError:
+            #     last_done_count = 0
+            # type_and_count = f"{task.task_type},{last_done_count + next_members_count - previous_members_count}"
+            # db.query(Task).filter(Task.id == task.id).update({'task_type': type_and_count})
         except UsernameInvalid:
             return set_task_invalid(task, db)
-        try:
-            async for member in monster.get_chat_members(chat_id=task.chat_id):
-                if member.status == ChatMemberStatus.MEMBER:
-                    try:
-                        await monster.get_chat_member(task.exported_chat_id, member.user.id)
-                    except UserNotParticipant:
-                        try:
-                            await monster.add_chat_members(task.exported_chat_id, member.user.id)
-                            await asyncio.sleep(task.interval)
-                        except RPCError:
-                            return False
         except RPCError:
             return False
 
@@ -359,7 +378,7 @@ async def comment_message(monster: Client, task, db):
             message = await monster.get_discussion_message(task.chat_id, extract_message_id(task.message_id))
             await message.reply(random.choice(comment_messages))
             return True
-        except UsernameInvalid | MessageIdInvalid:
+        except BadRequest:
             return set_task_invalid(task, db)
         except RPCError:
             return False
@@ -438,9 +457,7 @@ async def perform_tasks(latest_perform, db):
                         db.query(Task).filter(Task.id == task.id).update({'status': task.status})
                         db.commit()
 
-                        grouped_task.tasks.pop(0)
-                        if len(grouped_task.tasks) == 0:
-                            grouped_tasks.pop()
+                        grouped_task.tasks.pop(grouped_task_map[grouped_task.task_type])
 
                         try:
                             latest_perform.pop(task.id)
@@ -489,16 +506,21 @@ async def perform_tasks(latest_perform, db):
 
                     # last grouped_task sleeping interval
                     if len(grouped_tasks) == 1:
-                        query_str = """
-                        select extract(epoch from (current_timestamp at time zone 'Asia/Tashkent' - max(ct.date)))
+
+                        query_str = f"""
+                        select extract(epoch from (:now - max(ct.date)))
 from client_task ct
 where ct.task_id in (select id from task t where t.task_type = :type)"""
-                        seconds = db.execute(text(query_str), {"type": task.task_type}).scalar()
+                        seconds = db.execute(text(query_str), {"now": datetime.now(), "type": task.task_type}).scalar()
                         if seconds < 3:
+                            print(seconds)
+                            print(f"Before sleeping: {datetime.now()}")
                             await asyncio.sleep(3 - float(seconds))
+                            print(f"After sleeping: {datetime.now()}")
 
                     # perform task by empty monster
                     if task.count > done_count:
+                        print(f"Begin: {datetime.now()}")
                         monster = monsters[index_monster]
                         result = False
                         match task.task_type:
@@ -519,6 +541,7 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                             db.commit()
                             db.refresh(client_task)
                             latest_perform[task.id] = datetime.now()
+                        print(f"End: {datetime.now()}")
 
                     if len(grouped_task.tasks) == grouped_task_map[grouped_task.task_type] + 1:
                         grouped_task_map[grouped_task.task_type] = 0
