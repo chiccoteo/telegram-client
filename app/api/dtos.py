@@ -44,6 +44,7 @@ class CheckTwoStepPasswordForm(BaseModel):
 
 
 class ClientDto(BaseModel):
+    id: int
     username: str | None
     phone_number: str
     chat_id: str | None

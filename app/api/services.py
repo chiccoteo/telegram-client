@@ -156,6 +156,10 @@ class TgService:
         return my_client
 
     @staticmethod
+    async def get_clients(params, db):
+        return s_paginate(db.query(MyClient).order_by(MyClient.created_at), params)
+
+    @staticmethod
     async def create_task(form: TaskForm, db):
         if form.count is None:
             task = Task(chat_id=form.chat_id, task_type=form.task_type, status=TaskStatus.CREATED.name)
