@@ -74,6 +74,11 @@ async def get_client(phone_number: str, db: db_dependency):
     return await service.get_client(phone_number, db)
 
 
+@app.get(f"{base_url}clients-page", dependencies=[Depends(get_current_user)], response_model=Page[ClientDto])
+async def get_clients(params: pageable_params, db: db_dependency):
+    return await service.get_clients(params, db)
+
+
 @app.post(f"{base_url}task", dependencies=[Depends(get_current_user)], response_model=TaskDto)
 async def create_task(form: TaskForm, db: db_dependency):
     return await service.create_task(form, db)
