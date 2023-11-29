@@ -2,9 +2,7 @@ import asyncio
 import datetime
 import random
 from asyncio import CancelledError
-from datetime import timedelta
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi_pagination.ext.sqlalchemy import paginate as s_paginate
 from fastapi_pagination import paginate
 from fastapi_pagination.utils import disable_installed_extensions_check
@@ -18,7 +16,7 @@ from sqlalchemy import func, false, true, desc
 from sqlalchemy.sql import text
 
 import app.api.utils as utils
-from app.db.database import SessionLocal
+from app.api.database import SessionLocal
 from .enums import GrantType, TaskType, TaskStatus
 from .models import MyClient, Task, ClientTask, User
 from .exceptions import *
@@ -60,7 +58,8 @@ class TgService:
 
     @staticmethod
     async def register_client(form, db):
-        my_client = db.query(MyClient).filter(MyClient.phone_number == form.phone_number).filter(
+        phone_number = correct_phone_number_format(form.phone_number)
+        my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
             MyClient.deleted == false()).first()
         if my_client and my_client.signed:
             raise ClientAlreadyRegisteredException("Client already registered")
@@ -68,11 +67,11 @@ class TgService:
             raise CodeIsSentException("Confirmation code was sent")
         else:
             try:
-                client = Client(name=form.phone_number, api_id=api_id, api_hash=api_hash,
-                                phone_number=form.phone_number, workdir="app/db")
+                client = Client(name=phone_number, api_id=api_id, api_hash=api_hash,
+                                phone_number=phone_number, workdir="app/db")
                 await client.connect()
                 sent_code = await client.send_code(client.phone_number)
-                deleted_client = db.query(MyClient).filter(MyClient.phone_number == form.phone_number).filter(
+                deleted_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
                     MyClient.deleted == true()).first()
                 if deleted_client:
                     deleted_client.deleted = False
@@ -81,71 +80,79 @@ class TgService:
                     db.commit()
                     db.refresh(deleted_client)
                 else:
-                    new_my_client = MyClient(phone_number=form.phone_number, sent_code_hash=sent_code.phone_code_hash)
+                    new_my_client = MyClient(phone_number=phone_number, sent_code_hash=sent_code.phone_code_hash)
                     db.add(new_my_client)
                     db.commit()
                     db.refresh(new_my_client)
 
                 clients[client.phone_number] = client
-                return form.phone_number
+                return phone_number
             except PhoneNumberInvalid as ex:
                 raise PhoneNumberInvalidException(ex.MESSAGE)
 
     @staticmethod
     async def confirm_code(form: ConfirmationCodeForm, db):
-        my_client = db.query(MyClient).filter(MyClient.phone_number == form.phone_number).filter(
+        phone_number = correct_phone_number_format(form.phone_number)
+        my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
             MyClient.deleted == false()).first()
-        if not my_client:
+        if my_client and my_client.signed:
+            raise ClientAlreadyRegisteredException("Client already registered")
+        elif my_client:
+            client = clients.get(phone_number)
+            try:
+                signed_user = await client.sign_in(phone_number=phone_number,
+                                                   phone_code_hash=my_client.sent_code_hash,
+                                                   phone_code=form.sent_code)
+                my_client.signed = True
+                my_client.username = signed_user.username
+                my_client.chat_id = signed_user.id
+                db.add(my_client)
+                db.commit()
+                db.refresh(my_client)
+
+                set_task_pending(db)
+
+                clients.pop(client.phone_number)
+                return {"needed_two_step_password": False}
+            except PhoneCodeExpired:
+                my_client.deleted = True
+                db.add(my_client)
+                db.commit()
+                db.refresh(my_client)
+                raise PhoneCodeExpiredException("Confirmation code expired")
+            except SessionPasswordNeeded:
+                return {"needed_two_step_password": True}
+            except PhoneCodeInvalid:
+                raise PhoneCodeInvalidException("Confirmation code is invalid")
+        else:
             raise ClientNotFoundException("Phone number not found")
-        client = clients.get(form.phone_number)
-        try:
-            signed_user = await client.sign_in(phone_number=form.phone_number,
-                                               phone_code_hash=my_client.sent_code_hash,
-                                               phone_code=form.sent_code)
-            my_client.signed = True
-            my_client.username = signed_user.username
-            my_client.chat_id = signed_user.id
-            db.add(my_client)
-            db.commit()
-            db.refresh(my_client)
-
-            set_task_pending(db)
-
-            clients.pop(client.phone_number)
-            return my_client
-        except PhoneCodeExpired:
-            my_client.deleted = True
-            db.add(my_client)
-            db.commit()
-            db.refresh(my_client)
-            raise PhoneCodeExpiredException("Confirmation code expired")
-        except SessionPasswordNeeded:
-            raise TwoStepPasswordNeededException("Two step password needed")
-        except PhoneCodeInvalid:
-            raise PhoneCodeInvalidException("Confirmation code is invalid")
 
     @staticmethod
     async def check_two_step_password(form: CheckTwoStepPasswordForm, db):
-        my_client = db.query(MyClient).filter(MyClient.phone_number == form.phone_number).filter(
+        phone_number = correct_phone_number_format(form.phone_number)
+        my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
             MyClient.deleted == false()).first()
-        if not my_client:
+        if my_client and my_client.signed:
+            raise ClientAlreadyRegisteredException("Client already registered")
+        elif my_client:
+            client = clients.get(phone_number)
+            try:
+                signing_user = await client.check_password(form.two_step_password)
+                my_client.signed = True
+                my_client.username = signing_user.username
+                my_client.chat_id = signing_user.id
+                db.add(my_client)
+                db.commit()
+                db.refresh(my_client)
+
+                set_task_pending(db)
+
+                clients.pop(client.phone_number)
+                return my_client
+            except BadRequest:
+                raise TwoStepPasswordInvalidException("Two step password is invalid")
+        else:
             raise ClientNotFoundException("Phone number not found")
-        client = clients.get(form.phone_number)
-        try:
-            signing_user = await client.check_password(form.two_step_password)
-            my_client.signed = True
-            my_client.username = signing_user.username
-            my_client.chat_id = signing_user.id
-            db.add(my_client)
-            db.commit()
-            db.refresh(my_client)
-
-            set_task_pending(db)
-
-            clients.pop(client.phone_number)
-            return my_client
-        except BadRequest:
-            raise TwoStepPasswordInvalidException("Two step password is invalid")
 
     @staticmethod
     async def get_client(phone_number: str, db):
@@ -401,6 +408,13 @@ where status in ('COMPLETED', 'ILLEGAL')"""
 def extract_message_id(link: str):
     splits: [] = link.split("/")
     return int(splits[-1])
+
+
+def correct_phone_number_format(phone_number):
+    if phone_number[0] != "+":
+        return f"+{phone_number}"
+    else:
+        return phone_number
 
 
 def set_task_invalid(task, db):

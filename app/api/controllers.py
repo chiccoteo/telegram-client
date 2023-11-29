@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from .exceptions import *
 
 import app.api.models as models
-from app.db.database import engine, SessionLocal
+from app.api.database import engine, SessionLocal
 from .services import TgService, context_refresh_event
 from .utils import get_current_user
 
@@ -57,8 +57,7 @@ async def register_client(form: ClientRegistrationForm, db: db_dependency):
     return {"data": phone_number, "message": "Confirmation code is sent"}
 
 
-@app.post(f"{base_url}client/auth/confirmation-code", dependencies=[Depends(get_current_user)],
-          response_model=ClientDto)
+@app.post(f"{base_url}client/auth/confirmation-code", dependencies=[Depends(get_current_user)])
 async def confirm_code(form: ConfirmationCodeForm, db: db_dependency):
     return await service.confirm_code(form, db)
 
@@ -189,14 +188,6 @@ async def phone_code_expired_exception_handler(request: Request, ex: PhoneCodeEx
 
 @app.exception_handler(PhoneCodeInvalidException)
 async def phone_code_invalid_exception_handler(request: Request, ex: CodeIsSentException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(TwoStepPasswordNeededException)
-async def two_step_password_needed_exception_handler(request: Request, ex: TwoStepPasswordNeededException):
     return JSONResponse(
         status_code=400,
         content={"message": f"Oops! {ex.name}."}

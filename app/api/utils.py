@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from starlette import status
 
 from app.api.consts import ACCESS_TOKEN_EXPIRE, REFRESH_TOKEN_EXPIRE, JWT_SECRET_KEY, ALGORITHM, JWT_REFRESH_SECRET_KEY
-from app.db.database import SessionLocal
+from app.api.database import SessionLocal
 from app.api.dtos import TokenResponse, TokenDetails
 from app.api.enums import GrantType
 from app.api.exceptions import CredentialsException

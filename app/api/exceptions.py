@@ -43,11 +43,6 @@ class PhoneCodeInvalidException(Exception):
         self.name = name
 
 
-class TwoStepPasswordNeededException(Exception):
-    def __init__(self, name: str):
-        self.name = name
-
-
 class TwoStepPasswordInvalidException(Exception):
     def __init__(self, name: str):
         self.name = name
