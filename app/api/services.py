@@ -566,10 +566,10 @@ def get_all_clients(db):
 def context_refresh_event():
     db = SessionLocal()
     initialize_admin(db)
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
-                      args=[latest_perform_tasks, db])
-    scheduler.start()
+    # scheduler = AsyncIOScheduler()
+    # scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
+    #                   args=[latest_perform_tasks, db])
+    # scheduler.start()
 
 
 def initialize_admin(db):
