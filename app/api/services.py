@@ -157,6 +157,7 @@ class TgService:
     @staticmethod
     async def get_client(phone_number: str, db):
         my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
+            MyClient.signed == true()).filter(
             MyClient.deleted == false()).first()
         if not my_client:
             raise ClientNotFoundException("Client not found")
@@ -164,14 +165,18 @@ class TgService:
 
     @staticmethod
     async def get_clients(params, db):
-        return s_paginate(db.query(MyClient).order_by(MyClient.created_at), params)
+        return s_paginate(db.query(MyClient).filter(
+            MyClient.deleted == false()).filter(
+            MyClient.signed == true()).order_by(
+            MyClient.created_at), params)
 
     @staticmethod
     async def create_task(form: TaskForm, db):
         if form.count is None:
             task = Task(chat_id=form.chat_id, task_type=form.task_type, status=TaskStatus.CREATED.name)
         else:
-            if form.count > db.query(func.count(MyClient.id)).scalar():
+            if form.task_type != TaskType.EXPORT_CHAT_MEMBERS.name and form.count > db.query(
+                    func.count(MyClient.id)).scalar():
                 raise TaskCountTooManyException("Task count is too many")
             task = Task(chat_id=form.chat_id, count=form.count, task_type=form.task_type,
                         status=TaskStatus.PENDING.name)
