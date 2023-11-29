@@ -14,7 +14,7 @@ from pyrogram.errors import SessionPasswordNeeded, PhoneCodeInvalid, BadRequest,
 
 from pyrogram import Client
 from pyrogram.raw import functions
-from sqlalchemy import func, false, true
+from sqlalchemy import func, false, true, desc
 from sqlalchemy.sql import text
 
 import app.api.utils as utils
@@ -158,27 +158,27 @@ class TgService:
     @staticmethod
     async def create_task(form: TaskForm, db):
         if form.count is None:
-            task = Task(chat_id=form.chat_id, task_type=form.task_type, status=TaskStatus.CREATED.value)
+            task = Task(chat_id=form.chat_id, task_type=form.task_type, status=TaskStatus.CREATED.name)
         else:
             if form.count > db.query(func.count(MyClient.id)).scalar():
                 raise TaskCountTooManyException("Task count is too many")
             task = Task(chat_id=form.chat_id, count=form.count, task_type=form.task_type,
-                        status=TaskStatus.PENDING.value)
-        if form.task_type == TaskType.TERMLY_READ_MESSAGES.value:
+                        status=TaskStatus.PENDING.name)
+        if form.task_type == TaskType.TERMLY_READ_MESSAGES.name:
             task.term_days = form.term_days
-        elif form.task_type == TaskType.JOIN_CHAT.value:
+        elif form.task_type == TaskType.JOIN_CHAT.name:
             task.interval = form.interval
-        elif form.task_type == TaskType.READ_MESSAGE.value:
+        elif form.task_type == TaskType.READ_MESSAGE.name:
             task.message_id = form.message_id
             task.interval = form.interval
-        elif form.task_type == TaskType.REACT_MESSAGE.value:
+        elif form.task_type == TaskType.REACT_MESSAGE.name:
             task.message_id = form.message_id
             task.reaction = form.reaction
             task.interval = form.interval
-        elif form.task_type == TaskType.EXPORT_CHAT_MEMBERS.value:
+        elif form.task_type == TaskType.EXPORT_CHAT_MEMBERS.name:
             task.exported_chat_id = form.exported_chat_id
             task.interval = form.interval
-        elif form.task_type == TaskType.COMMENT_MESSAGE.value:
+        elif form.task_type == TaskType.COMMENT_MESSAGE.name:
             task.message_id = form.message_id
             task.interval = form.interval
         else:
@@ -190,12 +190,12 @@ class TgService:
 
     @staticmethod
     async def get_task_types():
-        task_types = [e for e in TaskType]
+        task_types = [{"label": e.value, "value": e.name} for e in TaskType]
         return task_types
 
     @staticmethod
     async def get_task_statuses():
-        task_statuses = [e for e in TaskStatus]
+        task_statuses = [{"label": e.value, "value": e.name} for e in TaskStatus]
         return task_statuses
 
     @staticmethod
@@ -227,9 +227,9 @@ group by t.id"""
 
     @staticmethod
     async def get_tasks(request, db):
-        def task_types(x): return request.task_type if len(x) != 0 else [e for e in TaskType]
+        def task_types(x): return request.task_type if len(x) != 0 else [e.name for e in TaskType]
 
-        def task_statuses(x): return request.task_status if len(x) != 0 else [e for e in TaskStatus]
+        def task_statuses(x): return request.task_status if len(x) != 0 else [e.name for e in TaskStatus]
 
         query_str = """
         select t.id,
@@ -252,7 +252,7 @@ where t.task_type = ANY(:types)
   and t.status = ANY(:statuses)
   and (:start_date is null or :end_date is null or t.created_at between :start_date and :end_date)
 group by t.id, t.created_at
-order by t.created_at"""
+order by t.created_at desc"""
         results = db.execute(text(query_str),
                              {"types": task_types(request.task_type), "statuses": task_statuses(request.task_status),
                               "start_date": request.start_date,
@@ -266,11 +266,11 @@ order by t.created_at"""
             raise TaskNotFoundException("Task not found")
         if form.count is not None:
             task.count = form.count
-            if task.status == TaskStatus.CREATED:
-                task.status = TaskStatus.PENDING
-        if task.status == TaskStatus.PENDING and form.status == TaskStatus.PAUSING:
+            if task.status == TaskStatus.CREATED.name:
+                task.status = TaskStatus.PENDING.name
+        if task.status == TaskStatus.PENDING.name and form.status == TaskStatus.PAUSING.name:
             task.status = form.status
-        if task.status == TaskStatus.PAUSING and form.status == TaskStatus.PENDING:
+        if task.status == TaskStatus.PAUSING.name and form.status == TaskStatus.PENDING.name:
             task.status = form.status
         db.add(task)
         db.commit()
@@ -279,13 +279,14 @@ order by t.created_at"""
 
     @staticmethod
     async def get_task_clients(params, task_id, db):
-        return s_paginate(db.query(ClientTask).filter(ClientTask.task_id == task_id).order_by(ClientTask.date),
+        return s_paginate(db.query(ClientTask).filter(ClientTask.task_id == task_id).order_by(desc(ClientTask.date)),
                           params)
 
     @staticmethod
     async def get_client_tasks(params, client_id, db):
-        return s_paginate(db.query(ClientTask).filter(ClientTask.client_id == client_id).order_by(ClientTask.date),
-                          params)
+        return s_paginate(
+            db.query(ClientTask).filter(ClientTask.client_id == client_id).order_by(desc(ClientTask.date)),
+            params)
 
 
 async def join_monsters(monster, task, db):
@@ -354,7 +355,7 @@ async def export_chat_members(monster: Client, task, db):
             await monster.add_chat_members(task.exported_chat_id, members)
             next_members_count = await monster.get_chat_members_count(task.exported_chat_id)
             child_task = Task(chat_id=task.chat_id, count=next_members_count - previous_members_count,
-                              task_type=task.task_type, status=TaskStatus.COMPLETED,
+                              task_type=task.task_type, status=TaskStatus.COMPLETED.name,
                               exported_chat_id=task.exported_chat_id,
                               parent_task_id=task.id, interval=task.interval)
             db.add(child_task)
@@ -399,7 +400,7 @@ def extract_message_id(link: str):
 
 
 def set_task_invalid(task, db):
-    task.status = TaskStatus.INVALID
+    task.status = TaskStatus.INVALID.name
     db.add(task)
     db.commit()
     return False
@@ -412,7 +413,7 @@ async def perform_tasks(latest_perform, db):
     monsters_count = db.query(func.count(MyClient.id)).scalar()
     monsters = get_all_clients(db)
     try:
-        grouped_task_map = dict.fromkeys([e for e in TaskType], 0)
+        grouped_task_map = dict.fromkeys([e.name for e in TaskType], 0)
         grouped_tasks_query = """
             with ordered_tasks as
                  (select *
@@ -449,11 +450,11 @@ async def perform_tasks(latest_perform, db):
                     used_count = db.query(func.count(ClientTask.id)).filter(ClientTask.task_id == task.id).scalar()
                     if done_count >= task.count or used_count == monsters_count:
                         if done_count >= task.count:
-                            task.status = TaskStatus.COMPLETED
+                            task.status = TaskStatus.COMPLETED.name
                         elif used_count == monsters_count and done_count == 0:
-                            task.status = TaskStatus.ILLEGAL
+                            task.status = TaskStatus.ILLEGAL.name
                         else:
-                            task.status = TaskStatus.NOT_COMPLETED
+                            task.status = TaskStatus.NOT_COMPLETED.name
                         db.query(Task).filter(Task.id == task.id).update({'status': task.status})
                         db.commit()
 
@@ -534,7 +535,7 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                                 result = await export_chat_members(monster, task, db)
                             case "COMMENT_MESSAGE":
                                 result = await comment_message(monster, task, db)
-                        if task.status != TaskStatus.INVALID:
+                        if task.status != TaskStatus.INVALID.name:
                             user = db.query(MyClient).filter(MyClient.phone_number == monster.name).first()
                             client_task = ClientTask(user.id, task.id, result, datetime.now())
                             db.add(client_task)
@@ -548,7 +549,7 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                     else:
                         grouped_task_map[grouped_task.task_type] += 1
 
-            grouped_task_map.update(dict.fromkeys([e for e in TaskType], 0))
+            grouped_task_map.update(dict.fromkeys([e.name for e in TaskType], 0))
 
     except CancelledError:
         print("Tasks were cancelled")

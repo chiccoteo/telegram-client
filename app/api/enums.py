@@ -6,20 +6,20 @@ class GrantType(enum.StrEnum):
     REFRESH_TOKEN = "REFRESH_TOKEN"
 
 
-class TaskType(enum.StrEnum):
-    JOIN_CHAT = "JOIN_CHAT"
-    EXPORT_CHAT_MEMBERS = "EXPORT_CHAT_MEMBERS"
-    TERMLY_READ_MESSAGES = "TERMLY_READ_MESSAGES"
-    READ_MESSAGE = "READ_MESSAGE"
-    REACT_MESSAGE = "REACT_MESSAGE"
-    COMMENT_MESSAGE = "COMMENT_MESSAGE"
+class TaskType(enum.Enum):
+    JOIN_CHAT = "Join chat"
+    EXPORT_CHAT_MEMBERS = "Export chat members"
+    TERMLY_READ_MESSAGES = "Termly read messages"
+    READ_MESSAGE = "Read message"
+    REACT_MESSAGE = "React message"
+    COMMENT_MESSAGE = "Comment message"
 
 
-class TaskStatus(enum.StrEnum):
-    CREATED = "CREATED"
-    PENDING = "PENDING"
-    PAUSING = "PAUSING"
-    NOT_COMPLETED = "NOT_COMPLETED"
-    ILLEGAL = "ILLEGAL"
-    INVALID = "INVALID"
-    COMPLETED = "COMPLETED"
+class TaskStatus(enum.Enum):
+    CREATED = "Created"
+    PENDING = "Pending"
+    PAUSING = "Pausing"
+    NOT_COMPLETED = "Not completed"
+    ILLEGAL = "Illegal"
+    INVALID = "Invalid"
+    COMPLETED = "Completed"
