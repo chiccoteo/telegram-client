@@ -1,63 +1,94 @@
-class GeneralApiException(Exception):
-    def __init__(self, name: str):
+from app.api.enums import ErrorCode
+
+
+class TelegramClientException(Exception):
+    def __init__(self, name, code):
         self.name = name
+        self.code = code
+
+    def get_error_message(self):
+        return {"code": self.code, "message": self.name}
 
 
-class PasswordIncorrectException(Exception):
-    def __init__(self, name: str):
+class GeneralApiException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.GENERAL_API_EXCEPTION
 
 
-class CredentialsException(Exception):
-    def __init__(self, name: str):
+class PasswordIncorrectException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.PASSWORD_INCORRECT_EXCEPTION
 
 
-class RefreshTokenInvalidException(Exception):
-    def __init__(self, name: str):
+class CredentialsException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.CREDENTIALS_EXCEPTION
 
 
-class PhoneNumberInvalidException(Exception):
-    def __init__(self, name: str):
+class RefreshTokenInvalidException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.REFRESH_TOKEN_INVALID_EXCEPTION
 
 
-class ClientAlreadyRegisteredException(Exception):
-    def __init__(self, name: str):
+class PhoneNumberInvalidException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.PHONE_NUMBER_INVALID_EXCEPTION
 
 
-class CodeIsSentException(Exception):
-    def __init__(self, name: str):
+class ClientAlreadyRegisteredException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.CLIENT_ALREADY_REGISTERED_EXCEPTION
 
 
-class PhoneCodeExpiredException(Exception):
-    def __init__(self, name: str):
+class CodeIsSentException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.CODE_IS_SENT_EXCEPTION
 
 
-class PhoneCodeInvalidException(Exception):
-    def __init__(self, name: str):
+class PhoneCodeExpiredException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.PHONE_CODE_EXPIRED_EXCEPTION
 
 
-class TwoStepPasswordInvalidException(Exception):
-    def __init__(self, name: str):
+class PhoneCodeInvalidException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.PHONE_CODE_INVALID_EXCEPTION
 
 
-class ClientNotFoundException(Exception):
-    def __init__(self, name: str):
+class TwoStepPasswordNeededException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.TWO_STEP_PASSWORD_NEEDED_EXCEPTION
 
 
-class TaskNotFoundException(Exception):
-    def __init__(self, name: str):
+class TwoStepPasswordInvalidException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.TWO_STEP_PASSWORD_INVALID_EXCEPTION
 
 
-class TaskCountTooManyException(Exception):
-    def __init__(self, name: str):
+class ClientNotFoundException(TelegramClientException):
+    def __init__(self, name):
         self.name = name
+        self.code = ErrorCode.CLIENT_NOT_FOUND_EXCEPTION
+
+
+class TaskNotFoundException(TelegramClientException):
+    def __init__(self, name):
+        self.name = name
+        self.code = ErrorCode.TASK_NOT_FOUND_EXCEPTION
+
+
+class TaskCountTooManyException(TelegramClientException):
+    def __init__(self, name):
+        self.name = name
+        self.code = ErrorCode.TASK_COUNT_TOO_MANY_EXCEPTION

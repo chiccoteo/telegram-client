@@ -57,7 +57,8 @@ async def register_client(form: ClientRegistrationForm, db: db_dependency):
     return {"data": phone_number, "message": "Confirmation code is sent"}
 
 
-@app.post(f"{base_url}client/auth/confirmation-code", dependencies=[Depends(get_current_user)])
+@app.post(f"{base_url}client/auth/confirmation-code", dependencies=[Depends(get_current_user)],
+          response_model=ClientDto)
 async def confirm_code(form: ConfirmationCodeForm, db: db_dependency):
     return await service.confirm_code(form, db)
 
@@ -121,106 +122,9 @@ async def get_client_tasks(params: pageable_params, client_id, db: db_dependency
 add_pagination(app)
 
 
-@app.exception_handler(GeneralApiException)
-async def general_api_exception_handler(request: Request, ex: GeneralApiException):
+@app.exception_handler(TelegramClientException)
+async def telegram_client_exception_handler(request: Request, ex: TelegramClientException):
     return JSONResponse(
         status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(PasswordIncorrectException)
-async def password_incorrect_exception_handler(request: Request, ex: PasswordIncorrectException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(CredentialsException)
-async def credentials_exception_handler(request: Request, ex: CredentialsException):
-    return JSONResponse(
-        status_code=401,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(RefreshTokenInvalidException)
-async def refresh_token_invalid_exception_handler(request: Request, ex: RefreshTokenInvalidException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(PhoneNumberInvalidException)
-async def phone_number_invalid_exception_handler(request: Request, ex: PhoneNumberInvalidException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(ClientAlreadyRegisteredException)
-async def client_already_registered_exception_handler(request: Request,
-                                                      ex: ClientAlreadyRegisteredException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(CodeIsSentException)
-async def code_is_sent_exception_handler(request: Request, ex: CodeIsSentException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(PhoneCodeExpiredException)
-async def phone_code_expired_exception_handler(request: Request, ex: PhoneCodeExpiredException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(PhoneCodeInvalidException)
-async def phone_code_invalid_exception_handler(request: Request, ex: CodeIsSentException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(TwoStepPasswordInvalidException)
-async def two_step_password_invalid_exception_handler(request: Request, ex: TwoStepPasswordInvalidException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(ClientNotFoundException)
-async def client_not_found_exception_handler(request: Request, ex: ClientNotFoundException):
-    return JSONResponse(
-        status_code=404,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(TaskNotFoundException)
-async def task_not_found_exception_handler(request: Request, ex: TaskNotFoundException):
-    return JSONResponse(
-        status_code=404,
-        content={"message": f"Oops! {ex.name}."}
-    )
-
-
-@app.exception_handler(TaskCountTooManyException)
-async def task_count_too_many_exception_handler(request: Request, ex: TaskCountTooManyException):
-    return JSONResponse(
-        status_code=400,
-        content={"message": f"Oops! {ex.name}."}
+        content=ex.get_error_message()
     )

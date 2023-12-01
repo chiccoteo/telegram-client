@@ -1,8 +1,9 @@
 import asyncio
-import datetime
+from datetime import datetime, timedelta
 import random
 from asyncio import CancelledError
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi_pagination.ext.sqlalchemy import paginate as s_paginate
 from fastapi_pagination import paginate
 from fastapi_pagination.utils import disable_installed_extensions_check
@@ -64,15 +65,18 @@ class TgService:
         if my_client and my_client.signed:
             raise ClientAlreadyRegisteredException("Client already registered")
         elif my_client:
-            raise CodeIsSentException("Confirmation code was sent")
+            raise CodeIsSentException("Confirmation code already has been sent")
         else:
             try:
-                client = Client(name=phone_number, api_id=api_id, api_hash=api_hash,
-                                phone_number=phone_number, workdir="app/db")
-                await client.connect()
-                sent_code = await client.send_code(client.phone_number)
                 deleted_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
                     MyClient.deleted == true()).first()
+                if deleted_client:
+                    client = clients.get(phone_number)
+                else:
+                    client = Client(name=phone_number, api_id=api_id, api_hash=api_hash,
+                                    phone_number=phone_number, workdir="app/db")
+                    await client.connect()
+                sent_code = await client.send_code(client.phone_number)
                 if deleted_client:
                     deleted_client.deleted = False
                     deleted_client.sent_code_hash = sent_code.phone_code_hash
@@ -113,7 +117,7 @@ class TgService:
                 set_task_pending(db)
 
                 clients.pop(client.phone_number)
-                return {"needed_two_step_password": False}
+                return my_client
             except PhoneCodeExpired:
                 my_client.deleted = True
                 db.add(my_client)
@@ -121,7 +125,7 @@ class TgService:
                 db.refresh(my_client)
                 raise PhoneCodeExpiredException("Confirmation code expired")
             except SessionPasswordNeeded:
-                return {"needed_two_step_password": True}
+                raise TwoStepPasswordNeededException("Two step password needed")
             except PhoneCodeInvalid:
                 raise PhoneCodeInvalidException("Confirmation code is invalid")
         else:
@@ -405,7 +409,7 @@ def set_task_pending(db):
     query = """
     update task
 set status='PENDING'
-where status in ('COMPLETED', 'ILLEGAL')"""
+where status in ('NOT_COMPLETED', 'ILLEGAL')"""
     db.execute(text(query))
     db.commit()
 
@@ -433,11 +437,14 @@ latest_perform_tasks = dict()
 
 
 async def perform_tasks(latest_perform, db):
-    monsters_count = db.query(func.count(MyClient.id)).scalar()
-    monsters = get_all_clients(db)
     try:
+        monsters_count: int
+        grouped_tasks_query: str
+        monsters: list
         grouped_task_map = dict.fromkeys([e.name for e in TaskType], 0)
-        grouped_tasks_query = """
+        grouped_tasks = list()
+        while True:
+            grouped_tasks_query = """
             with ordered_tasks as
                  (select *
                   from task
@@ -448,8 +455,8 @@ async def perform_tasks(latest_perform, db):
         where status = 'PENDING'
         group by task_type
         order by created_at"""
-        grouped_tasks = list()
-        while True:
+            monsters = get_all_clients(db)
+            monsters_count = len(monsters)
             grouped_tasks.extend(db.execute(text(grouped_tasks_query)).fetchall())
 
             # fixed delay
@@ -536,7 +543,7 @@ async def perform_tasks(latest_perform, db):
 from client_task ct
 where ct.task_id in (select id from task t where t.task_type = :type)"""
                         seconds = db.execute(text(query_str), {"now": datetime.now(), "type": task.task_type}).scalar()
-                        if seconds < 3:
+                        if seconds is not None and seconds < 3:
                             print(seconds)
                             print(f"Before sleeping: {datetime.now()}")
                             await asyncio.sleep(3 - float(seconds))
