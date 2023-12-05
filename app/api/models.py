@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Boolean, String, ForeignKey, TIMESTAMP, text, BigInteger
+from sqlalchemy import Column, Integer, Boolean, String, ForeignKey, TIMESTAMP, text, BigInteger, Text
 
 from app.api.database import Base
 
@@ -29,6 +29,7 @@ class MyClient(Base, BaseModel):
     username = Column(String(length=32), unique=True, nullable=True)
     phone_number = Column(String(length=13), unique=True, nullable=False)
     chat_id = Column(String(length=32), unique=True, nullable=True)
+    banned = Column(Boolean, server_default='False')
     signed = Column(Boolean, server_default='False')
     sent_code_hash = Column(String(length=32), nullable=True)
 
@@ -46,7 +47,7 @@ class Task(Base, BaseModel):
     exported_chat_id = Column(String(length=32), nullable=True)
     task_type = Column(String, nullable=False)
     status = Column(String, nullable=False)
-    count = Column(Integer, nullable=True)
+    count = Column(Integer, nullable=False)
     interval = Column(Integer)
     term_days = Column(Integer, nullable=True)
     parent_task_id = Column(BigInteger, ForeignKey("task.id"))
@@ -77,10 +78,16 @@ class ClientTask(Base, BaseModel):
     client_id = Column(BigInteger, ForeignKey("client.id"))
     task_id = Column(BigInteger, ForeignKey("task.id"))
     success = Column(Boolean)
+    reason = Column(String)
+    interval = Column(Integer)
+    task_data = Column(Text)
     date = Column(TIMESTAMP)
 
-    def __init__(self, client_id, task_id, success, date):
+    def __init__(self, client_id, task_id, success, interval, date, reason=None, task_data=None):
         self.client_id = client_id
         self.task_id = task_id
         self.success = success
+        self.reason = reason
+        self.interval = interval
+        self.task_data = task_data
         self.date = date

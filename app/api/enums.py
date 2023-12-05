@@ -6,7 +6,7 @@ class GrantType(enum.StrEnum):
     REFRESH_TOKEN = "REFRESH_TOKEN"
 
 
-class TaskType(enum.Enum):
+class TaskType(enum.StrEnum):
     JOIN_CHAT = "Join chat"
     EXPORT_CHAT_MEMBERS = "Export chat members"
     TERMLY_READ_MESSAGES = "Termly read messages"
@@ -15,7 +15,7 @@ class TaskType(enum.Enum):
     COMMENT_MESSAGE = "Comment message"
 
 
-class TaskStatus(enum.Enum):
+class TaskStatus(enum.StrEnum):
     CREATED = "Created"
     PENDING = "Pending"
     PAUSING = "Pausing"

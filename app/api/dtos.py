@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -48,6 +50,7 @@ class ClientDto(BaseModel):
     username: str | None
     phone_number: str
     chat_id: str | None
+    banned: bool
 
 
 class TaskForm(BaseModel):
@@ -56,7 +59,7 @@ class TaskForm(BaseModel):
     reaction: str | None
     exported_chat_id: str | None
     task_type: str
-    count: int | None
+    count: int = 0
     interval: int = 3
     term_days: int | None
     parent_task_id: int | None
@@ -64,6 +67,7 @@ class TaskForm(BaseModel):
 
 class TaskUpdateForm(BaseModel):
     count: int | None
+    interval: int | None
     status: str | None
 
 
@@ -77,22 +81,41 @@ class TasksDtoRequest(BaseModel):
 class TaskDto(BaseModel):
     id: int
     chat_id: str
-    message_id: str | None
-    reaction: str | None
-    exported_chat_id: str | None
+    message_id: Optional[str] = None
+    reaction: str | None = None
+    exported_chat_id: str | None = None
     task_type: str
     status: str
-    count: int | None
-    interval: int = 3
-    term_days: int | None
-    parent_task_id: int | None
-    done_count: int = 0
-    failed_count: int = 0
+    count: int
+    interval: int | None = None
+    term_days: int | None = None
+    parent_task_id: int | None = None
+    done_count: int | None = None
+    failed_count: int | None = None
+
+
+class BasePageResponse(BaseModel):
+    items: list
+    total: int = 0
+    page: int
+    size: int
+    pages: int = 0
 
 
 class ClientTaskDto(BaseModel):
     id: int
-    client_id: int
+    client_phone_number: str
+    client_chat_id: str
     task_id: int
+    count: int = 1
     success: bool
+    reason: str | None = None
+    interval: int | None = None
+    task_data: list
     date: datetime
+
+
+class ClientTaskDetails(BaseModel):
+    success: bool = True
+    reason: str | None
+    task_data: list | None

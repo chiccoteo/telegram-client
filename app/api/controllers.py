@@ -13,7 +13,7 @@ from .exceptions import *
 
 import app.api.models as models
 from app.api.database import engine, SessionLocal
-from .services import TgService, context_refresh_event
+from .services import TgService
 from .utils import get_current_user
 
 models.Base.metadata.create_all(bind=engine)
@@ -21,7 +21,7 @@ models.Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app_fast_api: FastAPI):
-    context_refresh_event()
+    # context_refresh_event()
     yield
 
 
@@ -99,9 +99,14 @@ async def get_task_by_id(task_id, db: db_dependency):
     return await service.get_task_by_id(task_id, db)
 
 
-@app.post(f"{base_url}task-page", dependencies=[Depends(get_current_user)], response_model=Page[TaskDto])
-async def get_tasks(request: TasksDtoRequest, db: db_dependency):
-    return await service.get_tasks(request, db)
+@app.post(f"{base_url}task-page", dependencies=[Depends(get_current_user)])
+async def get_tasks(params: pageable_params, request: TasksDtoRequest, db: db_dependency):
+    return await service.get_tasks(params, request, db)
+
+
+@app.get(f"{base_url}child-tasks", dependencies=[Depends(get_current_user)], response_model=Page[TaskDto])
+async def get_child_tasks(params: pageable_params, task_id, db: db_dependency):
+    return await service.get_child_tasks(params, task_id, db)
 
 
 @app.put(f"{base_url}task", dependencies=[Depends(get_current_user)], response_model=TaskDto)
@@ -109,7 +114,7 @@ async def update_task(task_id, form: TaskUpdateForm, db: db_dependency):
     return await service.update_task(task_id, form, db)
 
 
-@app.get(f"{base_url}task-clients", dependencies=[Depends(get_current_user)], response_model=Page[ClientTaskDto])
+@app.get(f"{base_url}task-clients", dependencies=[Depends(get_current_user)])
 async def get_task_clients(params: pageable_params, task_id, db: db_dependency):
     return await service.get_task_clients(params, task_id, db)
 
