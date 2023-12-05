@@ -178,10 +178,10 @@ class TgService:
 
     @staticmethod
     async def create_task(form: TaskForm, db):
-        if form.count == 0:
+        if int(form.count) == 0:
             task = Task(chat_id=form.chat_id, task_type=TaskType[form.task_type].value, status=TaskStatus.CREATED)
         else:
-            if form.task_type != TaskType.EXPORT_CHAT_MEMBERS.name and form.count > db.query(
+            if form.task_type != TaskType.EXPORT_CHAT_MEMBERS.name and int(form.count) > db.query(
                     func.count(MyClient.id)).scalar():
                 raise TaskCountTooManyException("Task count is too many")
             task = Task(chat_id=form.chat_id, count=form.count, task_type=TaskType[form.task_type].value,
@@ -199,7 +199,6 @@ class TgService:
             task.interval = form.interval
         elif form.task_type == TaskType.EXPORT_CHAT_MEMBERS.name:
             task.exported_chat_id = form.exported_chat_id
-            task.interval = form.interval
         elif form.task_type == TaskType.COMMENT_MESSAGE.name:
             task.message_id = form.message_id
             task.interval = form.interval
@@ -217,7 +216,7 @@ class TgService:
 
     @staticmethod
     async def get_task_statuses():
-        task_statuses = [{"label": TaskType(e).value, "value": TaskType(e).name} for e in TaskStatus]
+        task_statuses = [{"label": TaskStatus(e).value, "value": TaskStatus(e).name} for e in TaskStatus]
         return task_statuses
 
     @staticmethod
@@ -351,10 +350,10 @@ limit :page offset :page_size"""
         if not task:
             raise TaskNotFoundException("Task not found")
         if task.status == TaskStatus.CREATED or task.status == TaskStatus.PENDING:
-            if form.count is not None:
+            if form.count is not None and int(form.count) != 0:
                 task.count = form.count
                 task.status = TaskStatus.PENDING
-            if form.interval is not None:
+            if form.interval is not None and task.task_type != TaskType.EXPORT_CHAT_MEMBERS:
                 task.interval = form.interval
         if task.status == TaskStatus.PENDING and form.status == TaskStatus.PAUSING:
             task.status = TaskStatus.PAUSING
@@ -402,6 +401,7 @@ where ct.task_id = :task_id"""
        c.phone_number as client_phone_number,
        c.chat_id      as client_chat_id,
        task_id,
+       (select 1) as count,
        success,
        reason,
        interval,
@@ -827,10 +827,10 @@ def get_all_clients(db):
 def context_refresh_event():
     db = SessionLocal()
     initialize_admin(db)
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
-                      args=[latest_perform_tasks, db])
-    scheduler.start()
+    # scheduler = AsyncIOScheduler()
+    # scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
+    #                   args=[latest_perform_tasks, db])
+    # scheduler.start()
 
 
 def initialize_admin(db):

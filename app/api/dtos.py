@@ -59,15 +59,15 @@ class TaskForm(BaseModel):
     reaction: str | None
     exported_chat_id: str | None
     task_type: str
-    count: int = 0
-    interval: int = 3
+    count: str
+    interval: str
     term_days: int | None
     parent_task_id: int | None
 
 
 class TaskUpdateForm(BaseModel):
-    count: int | None
-    interval: int | None
+    count: str | None
+    interval: str | None
     status: str | None
 
 
@@ -82,16 +82,16 @@ class TaskDto(BaseModel):
     id: int
     chat_id: str
     message_id: Optional[str] = None
-    reaction: str | None = None
-    exported_chat_id: str | None = None
+    reaction: Optional[str] = None
+    exported_chat_id: Optional[str] = None
     task_type: str
     status: str
     count: int
-    interval: int | None = None
-    term_days: int | None = None
-    parent_task_id: int | None = None
-    done_count: int | None = None
-    failed_count: int | None = None
+    interval: Optional[int] = None
+    term_days: Optional[int] = None
+    parent_task_id: Optional[int] = None
+    done_count: Optional[int] = None
+    failed_count: Optional[int] = None
 
 
 class BasePageResponse(BaseModel):
@@ -107,10 +107,10 @@ class ClientTaskDto(BaseModel):
     client_phone_number: str
     client_chat_id: str
     task_id: int
-    count: int = 1
+    count: int
     success: bool
-    reason: str | None = None
-    interval: int | None = None
+    reason: Optional[str] = None
+    interval: Optional[int] = None
     task_data: list
     date: datetime
 
@@ -118,4 +118,4 @@ class ClientTaskDto(BaseModel):
 class ClientTaskDetails(BaseModel):
     success: bool = True
     reason: str | None
-    task_data: list | None
+    task_data: list[str] | None
