@@ -117,5 +117,5 @@ class ClientTaskDto(BaseModel):
 
 class ClientTaskDetails(BaseModel):
     success: bool = True
-    reason: str | None
-    task_data: list[str] | None
+    reason: Optional[str] = None
+    task_data: list = None

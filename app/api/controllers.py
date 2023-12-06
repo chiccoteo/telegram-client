@@ -13,7 +13,7 @@ from .exceptions import *
 
 import app.api.models as models
 from app.api.database import engine, SessionLocal
-from .services import TgService
+from .services import TgService, context_refresh_event
 from .utils import get_current_user
 
 models.Base.metadata.create_all(bind=engine)
@@ -21,7 +21,7 @@ models.Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app_fast_api: FastAPI):
-    # context_refresh_event()
+    context_refresh_event()
     yield
 
 

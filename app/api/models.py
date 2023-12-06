@@ -14,8 +14,8 @@ class User(Base, BaseModel):
 
     username = Column(String(length=16), unique=True, nullable=False)
     password = Column(String, nullable=False)
-    first_name = Column(String(length=16), nullable=True)
-    last_name = Column(String(length=16), nullable=True)
+    first_name = Column(String(length=16))
+    last_name = Column(String(length=16))
 
     def __init__(self, username, password, first_name):
         self.username = username
@@ -26,12 +26,12 @@ class User(Base, BaseModel):
 class MyClient(Base, BaseModel):
     __tablename__ = "client"
 
-    username = Column(String(length=32), unique=True, nullable=True)
+    username = Column(String(length=32), unique=True)
     phone_number = Column(String(length=13), unique=True, nullable=False)
-    chat_id = Column(String(length=32), unique=True, nullable=True)
+    chat_id = Column(String(length=32), unique=True)
     banned = Column(Boolean, server_default='False')
     signed = Column(Boolean, server_default='False')
-    sent_code_hash = Column(String(length=32), nullable=True)
+    sent_code_hash = Column(String(length=32))
 
     def __init__(self, phone_number, sent_code_hash):
         self.phone_number = phone_number
@@ -42,20 +42,18 @@ class Task(Base, BaseModel):
     __tablename__ = "task"
 
     chat_id = Column(String(length=32), nullable=False)
-    message_id = Column(String(length=64), nullable=True)
+    message_id = Column(String(length=64))
     reaction = Column(String(length=32))
-    exported_chat_id = Column(String(length=32), nullable=True)
+    exported_chat_id = Column(String(length=32))
     task_type = Column(String, nullable=False)
     status = Column(String, nullable=False)
     count = Column(Integer, nullable=False)
     interval = Column(Integer)
-    term_days = Column(Integer, nullable=True)
+    term_days = Column(Integer)
     parent_task_id = Column(BigInteger, ForeignKey("task.id"))
 
-    def __init__(self, dict1=None, chat_id=None, message_id=None, reaction=None, exported_chat_id=None, task_type=None,
-                 status=None,
-                 count=None,
-                 interval=None, parent_task_id=None, term_days=None):
+    def __init__(self, task_dict=None, chat_id=None, task_type=None, count=None, status=None, message_id=None,
+                 reaction=None, exported_chat_id=None, interval=None, parent_task_id=None, term_days=None):
         self.chat_id = chat_id
         self.message_id = message_id
         self.reaction = reaction
@@ -67,21 +65,21 @@ class Task(Base, BaseModel):
         self.count = count
         self.term_days = term_days
 
-        if dict1 is not None:
-            for key, value in dict1.items():
+        if task_dict is not None:
+            for key, value in task_dict.items():
                 setattr(self, key, value)
 
 
 class ClientTask(Base, BaseModel):
     __tablename__ = "client_task"
 
-    client_id = Column(BigInteger, ForeignKey("client.id"))
-    task_id = Column(BigInteger, ForeignKey("task.id"))
-    success = Column(Boolean)
+    client_id = Column(BigInteger, ForeignKey("client.id"), nullable=False)
+    task_id = Column(BigInteger, ForeignKey("task.id"), nullable=False)
+    success = Column(Boolean, nullable=False)
     reason = Column(String)
     interval = Column(Integer)
     task_data = Column(Text)
-    date = Column(TIMESTAMP)
+    date = Column(TIMESTAMP, nullable=False)
 
     def __init__(self, client_id, task_id, success, interval, date, reason=None, task_data=None):
         self.client_id = client_id

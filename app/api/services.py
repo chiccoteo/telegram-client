@@ -161,31 +161,33 @@ class TgService:
             raise ClientNotFoundException("Phone number not found")
 
     @staticmethod
-    async def get_client(phone_number: str, db):
+    async def get_client(phone_number, db):
+        phone_number = correct_phone_number_format(phone_number)
         my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
-            MyClient.signed == true()).filter(
-            MyClient.deleted == false()).first()
+            MyClient.signed == true()).filter(MyClient.deleted == false()).first()
         if not my_client:
             raise ClientNotFoundException("Client not found")
         return my_client
 
     @staticmethod
     async def get_clients(params, db):
-        return s_paginate(db.query(MyClient).filter(
-            MyClient.deleted == false()).filter(
-            MyClient.signed == true()).order_by(
-            MyClient.created_at), params)
+        return s_paginate(db.query(MyClient).filter(MyClient.deleted == false()).filter(
+            MyClient.signed == true()).order_by(MyClient.created_at), params)
 
     @staticmethod
     async def create_task(form: TaskForm, db):
-        if int(form.count) == 0:
-            task = Task(chat_id=form.chat_id, task_type=TaskType[form.task_type].value, status=TaskStatus.CREATED)
-        else:
-            if form.task_type != TaskType.EXPORT_CHAT_MEMBERS.name and int(form.count) > db.query(
-                    func.count(MyClient.id)).scalar():
-                raise TaskCountTooManyException("Task count is too many")
-            task = Task(chat_id=form.chat_id, count=form.count, task_type=TaskType[form.task_type].value,
-                        status=TaskStatus.PENDING)
+        try:
+            if int(form.count) == 0:
+                task = Task(chat_id=form.chat_id, count=form.count, task_type=TaskType[form.task_type].value,
+                            status=TaskStatus.CREATED)
+            else:
+                if form.task_type != TaskType.EXPORT_CHAT_MEMBERS.name and int(form.count) > db.query(
+                        func.count(MyClient.id)).scalar():
+                    raise TaskCountTooManyException("Task count is too many")
+                task = Task(chat_id=form.chat_id, count=form.count, task_type=TaskType[form.task_type].value,
+                            status=TaskStatus.PENDING)
+        except KeyError:
+            raise GeneralApiException("Task type invalid")
         if form.task_type == TaskType.TERMLY_READ_MESSAGES.name:
             task.term_days = form.term_days
         elif form.task_type == TaskType.JOIN_CHAT.name:
@@ -211,13 +213,11 @@ class TgService:
 
     @staticmethod
     async def get_task_types():
-        task_types = [{"label": TaskType(e).value, "value": TaskType(e).name} for e in TaskType]
-        return task_types
+        return [{"label": TaskType(e).value, "value": TaskType(e).name} for e in TaskType]
 
     @staticmethod
     async def get_task_statuses():
-        task_statuses = [{"label": TaskStatus(e).value, "value": TaskStatus(e).name} for e in TaskStatus]
-        return task_statuses
+        return [{"label": TaskStatus(e).value, "value": TaskStatus(e).name} for e in TaskStatus]
 
     @staticmethod
     async def get_task_by_id(task_id, db):
@@ -349,11 +349,15 @@ limit :page offset :page_size"""
         task = db.query(Task).filter(Task.id == task_id).filter(Task.deleted == false()).first()
         if not task:
             raise TaskNotFoundException("Task not found")
-        if task.status == TaskStatus.CREATED or task.status == TaskStatus.PENDING:
-            if form.count is not None and int(form.count) != 0:
+        if task.task_type != TaskType.EXPORT_CHAT_MEMBERS and int(form.count) > db.query(
+                func.count(MyClient.id)).scalar():
+            raise TaskCountTooManyException("Task count is too many")
+        if task.status == TaskStatus.CREATED or task.status == TaskStatus.PENDING or task.status == TaskStatus.PAUSING:
+            if form.count is not None and int(form.count) > 0:
                 task.count = form.count
-                task.status = TaskStatus.PENDING
-            if form.interval is not None and task.task_type != TaskType.EXPORT_CHAT_MEMBERS:
+                if task.status != TaskStatus.PAUSING:
+                    task.status = TaskStatus.PENDING
+            if form.interval is not None and int(form.interval) > 0 and task.task_type != TaskType.EXPORT_CHAT_MEMBERS:
                 task.interval = form.interval
         if task.status == TaskStatus.PENDING and form.status == TaskStatus.PAUSING:
             task.status = TaskStatus.PAUSING
@@ -389,7 +393,8 @@ from client_task ct
 from client_task ct
          join client c on c.id = ct.client_id
          join task t on t.id = ct.task_id and t.parent_task_id = :task_id
-order by date"""
+order by date
+limit :page offset :page_size"""
         else:
             count_query = """
             select count(ct.id)
@@ -410,10 +415,12 @@ where ct.task_id = :task_id"""
 from client_task ct
          join client c on c.id = ct.client_id
 where ct.task_id = :task_id
-order by date"""
+order by date
+limit :page offset :page_size"""
 
         total = db.execute(text(count_query), {"task_id": task_id}).scalar()
-        client_task_rows = db.execute(text(query), {"task_id": task_id}).fetchall()
+        client_task_rows = db.execute(text(query), {"task_id": task_id, "page": params.size,
+                                                    "page_size": (params.page - 1) * params.size}).fetchall()
         client_tasks = []
         for client_task in client_task_rows:
             if client_task.task_data is not None:
@@ -452,10 +459,12 @@ where client_id = :client_id"""
 from client_task ct
          join client c on c.id = ct.client_id
 where client_id = :client_id
-order by date"""
+order by date
+limit :page offset :page_size"""
 
         total = db.execute(text(count_query), {"client_id": client_id}).scalar()
-        client_task_rows = db.execute(text(query), {"client_id": client_id}).fetchall()
+        client_task_rows = db.execute(text(query), {"client_id": client_id, "page": params.size,
+                                                    "page_size": (params.page - 1) * params.size}).fetchall()
         client_tasks = []
         for client_task in client_task_rows:
             if client_task.task_data is not None:
@@ -690,11 +699,11 @@ async def perform_tasks(latest_perform, db):
                     used_count = db.query(func.count(ClientTask.id)).filter(ClientTask.task_id == task.id).scalar()
                     if done_count >= task.count or used_count == monsters_count:
                         if done_count >= task.count:
-                            task.status = TaskStatus.COMPLETED.name
+                            task.status = TaskStatus.COMPLETED
                         elif used_count == monsters_count and done_count == 0:
-                            task.status = TaskStatus.ILLEGAL.name
+                            task.status = TaskStatus.ILLEGAL
                         else:
-                            task.status = TaskStatus.NOT_COMPLETED.name
+                            task.status = TaskStatus.NOT_COMPLETED
                         db.query(Task).filter(Task.id == task.id).update({'status': task.status})
                         db.commit()
 
@@ -777,15 +786,15 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                         print(f"Begin: {datetime.now()}")
                         client_task_details = None
                         match task.task_type:
-                            case "JOIN_CHAT":
+                            case TaskType.JOIN_CHAT:
                                 client_task_details = await join_monsters(monster, task, db)
-                            case "READ_MESSAGE":
+                            case TaskType.READ_MESSAGE:
                                 client_task_details = await read_chat_message(monster, task, db)
-                            case "REACT_MESSAGE":
+                            case TaskType.REACT_MESSAGE:
                                 client_task_details = await react_chat_message(monster, task, db)
-                            case "EXPORT_CHAT_MEMBERS":
+                            case TaskType.EXPORT_CHAT_MEMBERS:
                                 client_task_details = await export_chat_members(monster, task, db, latest_perform)
-                            case "COMMENT_MESSAGE":
+                            case TaskType.COMMENT_MESSAGE:
                                 client_task_details = await comment_message(monster, task, db)
                         if task.task_type != TaskType.EXPORT_CHAT_MEMBERS or (
                                 task.task_type == TaskType.EXPORT_CHAT_MEMBERS and task.status == TaskStatus.INVALID):
@@ -793,7 +802,7 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                             client_task = ClientTask(client_id=user.id, task_id=task.id,
                                                      success=client_task_details.success,
                                                      reason=client_task_details.reason, interval=task.interval,
-                                                     task_data=client_task_details.task_data,
+                                                     task_data="".join(client_task_details.task_data),
                                                      date=datetime.now())
                             db.add(client_task)
                             db.commit()
