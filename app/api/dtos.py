@@ -60,7 +60,7 @@ class TaskForm(BaseModel):
     exported_chat_id: str | None
     task_type: str
     count: str
-    interval: str
+    interval: str | None
     term_days: int | None
     parent_task_id: int | None
 
@@ -84,7 +84,7 @@ class TaskDto(BaseModel):
     message_id: Optional[str] = None
     reaction: Optional[str] = None
     exported_chat_id: Optional[str] = None
-    task_type: str
+    task_type: dict
     status: str
     count: int
     interval: Optional[int] = None

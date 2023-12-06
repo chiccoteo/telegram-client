@@ -269,10 +269,22 @@ group by t.id"""
     @staticmethod
     async def get_tasks(params, request, db):
         def task_types(x):
-            return request.task_type if len(x) != 0 else [TaskType(e).value for e in TaskType]
+            types = []
+            for e in request.task_type:
+                try:
+                    types.append(TaskType[e])
+                except TypeError:
+                    raise GeneralApiException("Task type invalid")
+            return types if len(x) != 0 else [TaskType(e).value for e in TaskType]
 
         def task_statuses(x):
-            return request.task_status if len(x) != 0 else [TaskStatus(e).value for e in TaskStatus]
+            statuses = []
+            for e in request.task_status:
+                try:
+                    statuses.append(TaskStatus[e])
+                except TypeError:
+                    raise GeneralApiException("Task status invalid")
+            return statuses if len(x) != 0 else [TaskStatus(e).value for e in TaskStatus]
 
         count_tasks_query = """
         select count(id)
@@ -309,7 +321,8 @@ limit :page offset :page_size"""
                                     "page": params.size, "page_size": (params.page - 1) * params.size}).fetchall()
 
             for task in task_rows:
-                tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, task_type=task.task_type, status=task.status,
+                task_type = {"label": TaskType(task.task_type), "value": TaskType(task.task_type).name}
+                tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, task_type=task_type, status=task.status,
                                      count=task.count, interval=task.interval))
         return BasePageResponse(items=tasks, total=total_tasks_count, page=params.page,
                                 size=params.size, pages=math.ceil(total_tasks_count / params.size))
@@ -338,7 +351,8 @@ limit :page offset :page_size"""
                                                    "page_size": (params.page - 1) * params.size}).fetchall()
         tasks = []
         for task in child_task_rows:
-            tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, message_id=task.message_id, task_type=task.task_type,
+            task_type = {"label": TaskType(task.task_type), "value": TaskType(task.task_type).name}
+            tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, message_id=task.message_id, task_type=task_type,
                                  status=task.status, count=task.count, interval=task.interval,
                                  parent_task_id=task.parent_task_id))
         return BasePageResponse(items=tasks, total=total, page=params.page,
@@ -838,10 +852,10 @@ def get_all_clients(db):
 def context_refresh_event():
     db = SessionLocal()
     initialize_admin(db)
-    # scheduler = AsyncIOScheduler()
-    # scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
-    #                   args=[latest_perform_tasks, db])
-    # scheduler.start()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
+                      args=[latest_perform_tasks, db])
+    scheduler.start()
 
 
 def initialize_admin(db):
