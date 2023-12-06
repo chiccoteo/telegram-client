@@ -107,6 +107,7 @@ class ClientTaskDto(BaseModel):
     client_phone_number: str
     client_chat_id: str
     task_id: int
+    task_type: Optional[str] = None
     count: int
     success: bool
     reason: Optional[str] = None

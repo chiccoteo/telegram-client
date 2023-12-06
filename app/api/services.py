@@ -393,7 +393,7 @@ from client_task ct
 from client_task ct
          join client c on c.id = ct.client_id
          join task t on t.id = ct.task_id and t.parent_task_id = :task_id
-order by date
+order by date desc
 limit :page offset :page_size"""
         else:
             count_query = """
@@ -415,7 +415,7 @@ where ct.task_id = :task_id"""
 from client_task ct
          join client c on c.id = ct.client_id
 where ct.task_id = :task_id
-order by date
+order by date desc
 limit :page offset :page_size"""
 
         total = db.execute(text(count_query), {"task_id": task_id}).scalar()
@@ -451,6 +451,7 @@ where client_id = :client_id"""
        c.phone_number as client_phone_number,
        c.chat_id      as client_chat_id,
        task_id,
+       t.task_type,
        success,
        reason,
        ct.interval,
@@ -458,8 +459,9 @@ where client_id = :client_id"""
        date
 from client_task ct
          join client c on c.id = ct.client_id
+         join task t on t.id = ct.task_id
 where client_id = :client_id
-order by date
+order by date desc
 limit :page offset :page_size"""
 
         total = db.execute(text(count_query), {"client_id": client_id}).scalar()
@@ -480,7 +482,7 @@ limit :page offset :page_size"""
                                               client_chat_id=client_task.client_chat_id, task_id=client_task.task_id,
                                               count=count, success=client_task.success, reason=client_task.reason,
                                               inetrval=client_task.interval, task_data=task_data,
-                                              date=client_task.date))
+                                              task_type=client_task.task_type, date=client_task.date))
         return BasePageResponse(total=total, items=client_tasks, page=params.page,
                                 size=params.size, pages=math.ceil(total / params.size))
 
