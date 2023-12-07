@@ -13,7 +13,7 @@ from .exceptions import *
 
 import app.api.models as models
 from app.api.database import engine, SessionLocal
-from .services import TgService, context_refresh_event
+from .services import TelegramClientService, context_refresh_event
 from .utils import get_current_user
 
 models.Base.metadata.create_all(bind=engine)
@@ -38,7 +38,7 @@ def get_db():
 
 db_dependency = Annotated[Session, Depends(get_db)]
 pageable_params = Annotated[Params, Depends()]
-service = TgService()
+service = TelegramClientService()
 
 
 @app.post(f"{base_url}auth")
@@ -69,9 +69,9 @@ async def check_two_step_password(form: CheckTwoStepPasswordForm, db: db_depende
     return await service.check_two_step_password(form, db)
 
 
-@app.get(f"{base_url}client", dependencies=[Depends(get_current_user)], response_model=ClientDto)
-async def get_client(phone_number: str, db: db_dependency):
-    return await service.get_client(phone_number, db)
+@app.post(f"{base_url}clear-session", dependencies=[Depends(get_current_user)])
+async def clear_session(form: ClientRegistrationForm, db: db_dependency):
+    await service.clear_session(form.phone_number, db)
 
 
 @app.get(f"{base_url}clients-page", dependencies=[Depends(get_current_user)], response_model=Page[ClientDto])

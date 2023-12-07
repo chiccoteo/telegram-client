@@ -1,5 +1,7 @@
 import asyncio
+import os.path
 import random
+import re
 from asyncio import CancelledError
 from datetime import timedelta
 import math
@@ -29,7 +31,7 @@ disable_installed_extensions_check()
 clients = dict()
 
 
-class TgService:
+class TelegramClientService:
 
     def __init__(self):
         super()
@@ -60,6 +62,8 @@ class TgService:
     @staticmethod
     async def register_client(form, db):
         phone_number = correct_phone_number_format(form.phone_number)
+        if not phone_number:
+            raise PhoneNumberInvalidException("Phone number invalid")
         my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
             MyClient.deleted == false()).first()
         if my_client and my_client.signed:
@@ -97,6 +101,8 @@ class TgService:
     @staticmethod
     async def confirm_code(form: ConfirmationCodeForm, db):
         phone_number = correct_phone_number_format(form.phone_number)
+        if not phone_number:
+            raise PhoneNumberInvalidException("Phone number invalid")
         my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
             MyClient.deleted == false()).first()
         if my_client and my_client.signed:
@@ -135,6 +141,8 @@ class TgService:
     @staticmethod
     async def check_two_step_password(form: CheckTwoStepPasswordForm, db):
         phone_number = correct_phone_number_format(form.phone_number)
+        if not phone_number:
+            raise PhoneNumberInvalidException("Phone number invalid")
         my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
             MyClient.deleted == false()).first()
         if my_client and my_client.signed:
@@ -161,13 +169,22 @@ class TgService:
             raise ClientNotFoundException("Phone number not found")
 
     @staticmethod
-    async def get_client(phone_number, db):
+    async def clear_session(phone_number, db):
         phone_number = correct_phone_number_format(phone_number)
+        if not phone_number:
+            raise PhoneNumberInvalidException("Phone number invalid")
         my_client = db.query(MyClient).filter(MyClient.phone_number == phone_number).filter(
-            MyClient.signed == true()).filter(MyClient.deleted == false()).first()
-        if not my_client:
-            raise ClientNotFoundException("Client not found")
-        return my_client
+            MyClient.signed == false()).filter(MyClient.deleted == false()).first()
+        if my_client:
+            session = clients.get(phone_number)
+            await session.disconnect()
+            session_file = f"app/db/{phone_number}.session"
+            if os.path.exists(session_file):
+                os.remove(session_file)
+            clients.pop(phone_number)
+            my_client.deleted = True
+            db.add(my_client)
+            db.commit()
 
     @staticmethod
     async def get_clients(params, db):
@@ -217,7 +234,8 @@ class TgService:
 
     @staticmethod
     async def get_task_statuses():
-        return [{"label": TaskStatus(e).value, "value": TaskStatus(e).name} for e in TaskStatus]
+        return [{"label": TaskStatus.PENDING, "value": TaskStatus.PENDING.name},
+                {"label": TaskStatus.PAUSING, "value": TaskStatus.PAUSING.name}]
 
     @staticmethod
     async def get_task_by_id(task_id, db):
@@ -321,8 +339,8 @@ limit :page offset :page_size"""
                                     "page": params.size, "page_size": (params.page - 1) * params.size}).fetchall()
 
             for task in task_rows:
-                task_type = {"label": TaskType(task.task_type), "value": TaskType(task.task_type).name}
-                tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, task_type=task_type, status=task.status,
+                status = {"label": TaskStatus(task.status), "value": TaskStatus(task.status).name}
+                tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, task_type=task.task_type, status=status,
                                      count=task.count, interval=task.interval))
         return BasePageResponse(items=tasks, total=total_tasks_count, page=params.page,
                                 size=params.size, pages=math.ceil(total_tasks_count / params.size))
@@ -351,9 +369,9 @@ limit :page offset :page_size"""
                                                    "page_size": (params.page - 1) * params.size}).fetchall()
         tasks = []
         for task in child_task_rows:
-            task_type = {"label": TaskType(task.task_type), "value": TaskType(task.task_type).name}
-            tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, message_id=task.message_id, task_type=task_type,
-                                 status=task.status, count=task.count, interval=task.interval,
+            status = {"label": TaskStatus(task.status), "value": TaskStatus(task.status).name}
+            tasks.append(TaskDto(id=task.id, chat_id=task.chat_id, message_id=task.message_id, task_type=task.task_type,
+                                 status=status, count=task.count, interval=task.interval,
                                  parent_task_id=task.parent_task_id))
         return BasePageResponse(items=tasks, total=total, page=params.page,
                                 size=params.size, pages=math.ceil(total / params.size))
@@ -373,9 +391,9 @@ limit :page offset :page_size"""
                     task.status = TaskStatus.PENDING
             if form.interval is not None and int(form.interval) > 0 and task.task_type != TaskType.EXPORT_CHAT_MEMBERS:
                 task.interval = form.interval
-        if task.status == TaskStatus.PENDING and form.status == TaskStatus.PAUSING:
+        if task.status == TaskStatus.PENDING and form.status == TaskStatus.PAUSING.name:
             task.status = TaskStatus.PAUSING
-        if task.status == TaskStatus.PAUSING and form.status == TaskStatus.PENDING:
+        if task.status == TaskStatus.PAUSING and form.status == TaskStatus.PENDING.name:
             task.status = TaskStatus.PENDING
         db.add(task)
         db.commit()
@@ -504,7 +522,7 @@ limit :page offset :page_size"""
 async def join_monsters(monster, task, db):
     async with monster:
         try:
-            await monster.join_chat(task.chat_id)
+            await monster.join_chat(extract_username_or_message_id(task.chat_id))
             return ClientTaskDetails()
         except UserAlreadyParticipant as ex:
             return ClientTaskDetails(success=False, reason=ex.MESSAGE)
@@ -519,9 +537,11 @@ async def read_chat_message(monster, task, db):
     async with monster:
         try:
             await monster.invoke(
-                functions.messages.GetMessagesViews(peer=await monster.resolve_peer(task.chat_id),
-                                                    id=[extract_message_id(task.message_id)],
-                                                    increment=True)
+                functions.messages.GetMessagesViews(
+                    peer=await monster.resolve_peer(extract_username_or_message_id(task.chat_id)),
+                    id=[int(extract_username_or_message_id(task.message_id))],
+                    increment=True
+                )
             )
             return ClientTaskDetails()
         except BadRequest as ex:
@@ -534,7 +554,9 @@ async def read_chat_message(monster, task, db):
 async def react_chat_message(monster, task, db):
     async with monster:
         try:
-            await monster.send_reaction(task.chat_id, extract_message_id(task.message_id), task.reaction)
+            await monster.send_reaction(extract_username_or_message_id(task.chat_id),
+                                        int(extract_username_or_message_id(task.message_id)),
+                                        task.reaction)
             return ClientTaskDetails()
         except BadRequest as ex:
             set_task_invalid(task, db)
@@ -551,8 +573,10 @@ async def export_chat_members(monster: Client, task, db, latest_perform):
     count_child_tasks = db.execute(text(query_str), {"task_id": task.id}).fetchone()
     async with monster:
         try:
-            await monster.join_chat(task.chat_id)
-            await monster.join_chat(task.exported_chat_id)
+            chat_id = extract_username_or_message_id(task.chat_id)
+            exported_chat_id = extract_username_or_message_id(task.exported_chat_id)
+            await monster.join_chat(chat_id)
+            await monster.join_chat(exported_chat_id)
             members = []
             until = count_child_tasks.count * 10
             count_members_to_be_exported = 10
@@ -564,7 +588,7 @@ async def export_chat_members(monster: Client, task, db, latest_perform):
             if task.count - total_count < 10:
                 count_members_to_be_exported = task.count - count_child_tasks.sum
 
-            async for member in monster.get_chat_members(chat_id=task.chat_id, filter=ChatMembersFilter.RECENT):
+            async for member in monster.get_chat_members(chat_id=chat_id, filter=ChatMembersFilter.RECENT):
                 if member.status == ChatMemberStatus.MEMBER and not member.user.is_deleted:
                     if until == 0:
                         members.append(member.user.id)
@@ -573,12 +597,12 @@ async def export_chat_members(monster: Client, task, db, latest_perform):
                     else:
                         until -= 1
 
-            previous_members_count = await monster.get_chat_members_count(task.exported_chat_id)
-            await monster.add_chat_members(task.exported_chat_id, members)
-            next_members_count = await monster.get_chat_members_count(task.exported_chat_id)
+            previous_members_count = await monster.get_chat_members_count(exported_chat_id)
+            await monster.add_chat_members(exported_chat_id, members)
+            next_members_count = await monster.get_chat_members_count(exported_chat_id)
 
             new_members = []
-            async for member in monster.get_chat_members(chat_id=task.exported_chat_id,
+            async for member in monster.get_chat_members(chat_id=exported_chat_id,
                                                          filter=ChatMembersFilter.RECENT):
                 if member.status == ChatMemberStatus.MEMBER and not member.user.is_deleted:
                     new_members.append(str(member.user.id))
@@ -617,7 +641,8 @@ async def export_chat_members(monster: Client, task, db, latest_perform):
 async def comment_message(monster: Client, task, db):
     async with monster:
         try:
-            message = await monster.get_discussion_message(task.chat_id, extract_message_id(task.message_id))
+            message = await monster.get_discussion_message(extract_username_or_message_id(task.chat_id),
+                                                           int(extract_username_or_message_id(task.message_id)))
             commented_message = random.choice(comment_messages)
             await message.reply(commented_message)
             return ClientTaskDetails(task_data=[commented_message])
@@ -644,16 +669,23 @@ where status = ANY (:statuses)"""
     db.commit()
 
 
-def extract_message_id(link: str):
+def extract_username_or_message_id(link: str):
+    if "joinchat" in link or "+" in link:
+        return link
     splits: [] = link.split("/")
-    return int(splits[-1])
+    return splits[-1]
 
 
 def correct_phone_number_format(phone_number):
-    if phone_number[0] != "+":
-        return f"+{phone_number}"
+    PHONE_NUMBER_RE = re.compile("^[+]?(998)?(9[01345789]|88|33)[0-9]{7}$")
+    match = PHONE_NUMBER_RE.match(phone_number)
+    if match:
+        if match.string[0] != "+":
+            return f"+{match.string}"
+        else:
+            return match.string
     else:
-        return phone_number
+        return None
 
 
 def set_task_invalid(task, db):
@@ -705,7 +737,7 @@ async def perform_tasks(latest_perform, db):
                     task = Task(grouped_task.tasks[grouped_task_map[grouped_task.task_type]])
 
                     # done task
-                    if task.task_type == TaskType.EXPORT_CHAT_MEMBERS.name:
+                    if task.task_type == TaskType.EXPORT_CHAT_MEMBERS:
                         done_count = db.query(func.sum(Task.count)).filter(Task.parent_task_id == task.id).scalar()
                         if done_count is None:
                             done_count = 0
@@ -739,7 +771,7 @@ async def perform_tasks(latest_perform, db):
                     index_monster = 0
 
                     exported_task_monster_phone_number = None
-                    if task.task_type == TaskType.EXPORT_CHAT_MEMBERS.name:
+                    if task.task_type == TaskType.EXPORT_CHAT_MEMBERS:
                         query_current_task_monster = """
                         select distinct (phone_number)
 from client c
@@ -815,10 +847,14 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                         if task.task_type != TaskType.EXPORT_CHAT_MEMBERS or (
                                 task.task_type == TaskType.EXPORT_CHAT_MEMBERS and task.status == TaskStatus.INVALID):
                             user = db.query(MyClient).filter(MyClient.phone_number == monster.name).first()
+                            if client_task_details.task_data is None:
+                                task_data = None
+                            else:
+                                task_data = "".join(client_task_details.task_data)
                             client_task = ClientTask(client_id=user.id, task_id=task.id,
                                                      success=client_task_details.success,
                                                      reason=client_task_details.reason, interval=task.interval,
-                                                     task_data="".join(client_task_details.task_data),
+                                                     task_data=task_data,
                                                      date=datetime.now())
                             db.add(client_task)
                             db.commit()
@@ -852,10 +888,10 @@ def get_all_clients(db):
 def context_refresh_event():
     db = SessionLocal()
     initialize_admin(db)
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
-                      args=[latest_perform_tasks, db])
-    scheduler.start()
+    # scheduler = AsyncIOScheduler()
+    # scheduler.add_job(perform_tasks, "date", run_date=datetime.now() + timedelta(seconds=1),
+    #                   args=[latest_perform_tasks, db])
+    # scheduler.start()
 
 
 def initialize_admin(db):
