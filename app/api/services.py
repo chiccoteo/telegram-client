@@ -182,8 +182,7 @@ class TelegramClientService:
             if os.path.exists(session_file):
                 os.remove(session_file)
             clients.pop(phone_number)
-            my_client.deleted = True
-            db.add(my_client)
+            db.execute(text("delete from client where phone_number = :phone_number"), {"phone_number": phone_number})
             db.commit()
 
     @staticmethod
@@ -207,6 +206,7 @@ class TelegramClientService:
             raise GeneralApiException("Task type invalid")
         if form.task_type == TaskType.TERMLY_READ_MESSAGES.name:
             task.term_days = form.term_days
+            task.interval = form.interval
         elif form.task_type == TaskType.JOIN_CHAT.name:
             task.interval = form.interval
         elif form.task_type == TaskType.READ_MESSAGE.name:
@@ -261,7 +261,7 @@ where id = :task_id"""
        status,
        count,
        term_days,
-       (select current_timestamp at time zone 'Asia/Tashkent'::DATE - created_at::DATE) as done_count
+       ((select current_timestamp at time zone 'Asia/Tashkent')::DATE - created_at::DATE) as done_count
 from task
 where id = :task_id"""
         else:
@@ -304,6 +304,9 @@ group by t.id"""
                     raise GeneralApiException("Task status invalid")
             return statuses if len(x) != 0 else [TaskStatus(e).value for e in TaskStatus]
 
+        def date_to_datetime(x):
+            return datetime(x.year, x.month, x.day) if x is not None else None
+
         count_tasks_query = """
         select count(id)
 from task
@@ -311,10 +314,11 @@ where task_type = ANY (:types)
   and status = ANY (:statuses)
   and (:start_date is null or :end_date is null or created_at between :start_date and :end_date)
   and parent_task_id is NULL"""
-        total_tasks_count = db.execute(text(count_tasks_query), {"types": task_types(request.task_type),
-                                                                 "statuses": task_statuses(request.task_status),
-                                                                 "start_date": request.start_date,
-                                                                 "end_date": request.end_date}).scalar()
+        total_tasks_count = db.execute(text(count_tasks_query),
+                                       {"types": task_types(request.task_type),
+                                        "statuses": task_statuses(request.task_status),
+                                        "start_date": date_to_datetime(request.start_date),
+                                        "end_date": date_to_datetime(request.end_date)}).scalar()
         tasks = []
         if total_tasks_count != 0:
             query_str = """
@@ -335,7 +339,8 @@ limit :page offset :page_size"""
             task_rows = db.execute(text(query_str),
                                    {"types": task_types(request.task_type),
                                     "statuses": task_statuses(request.task_status),
-                                    "start_date": request.start_date, "end_date": request.end_date,
+                                    "start_date": date_to_datetime(request.start_date),
+                                    "end_date": date_to_datetime(request.end_date),
                                     "page": params.size, "page_size": (params.page - 1) * params.size}).fetchall()
 
             for task in task_rows:
@@ -765,7 +770,11 @@ async def perform_tasks(latest_perform, db):
 
                     # check task interval
                     if latest_perform.get(task.id) is not None:
-                        if int((datetime.now() - latest_perform.get(task.id)).total_seconds()) < task.interval:
+                        if task.interval is None:
+                            interval = 30
+                        else:
+                            interval = task.interval
+                        if int((datetime.now() - latest_perform.get(task.id)).total_seconds()) < interval:
                             continue
 
                     index_monster = 0
@@ -844,6 +853,7 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                                 client_task_details = await export_chat_members(monster, task, db, latest_perform)
                             case TaskType.COMMENT_MESSAGE:
                                 client_task_details = await comment_message(monster, task, db)
+                        print(f"End: {datetime.now()}")
                         if task.task_type != TaskType.EXPORT_CHAT_MEMBERS or (
                                 task.task_type == TaskType.EXPORT_CHAT_MEMBERS and task.status == TaskStatus.INVALID):
                             user = db.query(MyClient).filter(MyClient.phone_number == monster.name).first()
@@ -863,7 +873,6 @@ where ct.task_id in (select id from task t where t.task_type = :type)"""
                                 grouped_task.tasks.pop(grouped_task_map[grouped_task.task_type])
                             else:
                                 latest_perform[task.id] = datetime.now()
-                        print(f"End: {datetime.now()}")
 
                     if len(grouped_task.tasks) == grouped_task_map[grouped_task.task_type] + 1:
                         grouped_task_map[grouped_task.task_type] = 0

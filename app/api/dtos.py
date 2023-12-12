@@ -1,7 +1,7 @@
 from typing import Optional
 
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import date, datetime
 
 
 class TokenRequest(BaseModel):
@@ -60,7 +60,7 @@ class TaskForm(BaseModel):
     exported_chat_id: str | None
     task_type: str
     count: str
-    interval: str | None
+    interval: str = "3"
     term_days: int | None
     parent_task_id: int | None
 
@@ -74,8 +74,8 @@ class TaskUpdateForm(BaseModel):
 class TasksDtoRequest(BaseModel):
     task_type: list[str]
     task_status: list[str]
-    start_date: datetime | None
-    end_date: datetime | None
+    start_date: date | None
+    end_date: date | None
 
 
 class TaskDto(BaseModel):
